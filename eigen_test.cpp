@@ -1,9 +1,9 @@
-#include <eigen/Dense>
 #include <iostream>
 #include <math.h>
 #include <random>
 #include <sophus/se3.hpp>
 #include <vector>
+#include "eigen_test.h"
 
 Eigen::Matrix4d G1;
 Eigen::Matrix4d G2;
@@ -12,7 +12,7 @@ Eigen::Matrix4d G4;
 Eigen::Matrix4d G5;
 Eigen::Matrix4d G6;
 
-void setup()
+void eigen_test::setup()
 {
    G1 = Eigen::Matrix4d::Zero();
    G2 = Eigen::Matrix4d::Zero();
@@ -35,7 +35,7 @@ void setup()
    G6(1,0) = 1.;
 }
 
-Eigen::Matrix3d toR(double phi, double chi, double psi)
+Eigen::Matrix3d eigen_test::toR(double phi, double chi, double psi)
 {
    Eigen::Matrix3d R;
    R(0,0) = cos(phi)*cos(chi);
@@ -51,7 +51,7 @@ Eigen::Matrix3d toR(double phi, double chi, double psi)
    return R;
 }
 
-Eigen::Matrix4d toT(Eigen::Matrix3d R, Eigen::Vector3d t)
+Eigen::Matrix4d eigen_test::toT(Eigen::Matrix3d R, Eigen::Vector3d t)
 {
    Eigen::Matrix4d T = Eigen::Matrix4d::Zero();
    
@@ -62,14 +62,14 @@ Eigen::Matrix4d toT(Eigen::Matrix3d R, Eigen::Vector3d t)
    return T;
 }
 
-Eigen::Vector2d project(const Eigen::Vector3d& P)
+Eigen::Vector2d eigen_test::project(const Eigen::Vector3d& P)
 {
    Eigen::Vector2d v;
    v << P(0) / P(2) , P(1) / P(2);
    return v;
 }
 
-Eigen::Vector4d homog(const Eigen::Vector3d& P)
+Eigen::Vector4d eigen_test::homog(const Eigen::Vector3d& P)
 {
    Eigen::Vector4d H = Eigen::Vector4d::Zero();
    H(0) = P(0);
@@ -79,9 +79,9 @@ Eigen::Vector4d homog(const Eigen::Vector3d& P)
    return H;
 }
 
-Eigen::VectorXd project(std::vector<Eigen::Vector3d>& P,
-                        Eigen::Matrix4d T,
-                        Eigen::Matrix<double, 3, 4> K)
+Eigen::VectorXd eigen_test::project(std::vector<Eigen::Vector3d>& P,
+                                    Eigen::Matrix4d T,
+                                    Eigen::Matrix<double, 3, 4> K)
 {
    Eigen::VectorXd v(2 * P.size());
    std::vector<Eigen::Vector3d>::const_iterator i;
@@ -95,7 +95,8 @@ Eigen::VectorXd project(std::vector<Eigen::Vector3d>& P,
    return v;
 }
 
-std::vector<Eigen::Vector4d> homog(const std::vector<Eigen::Vector3d>& P)
+std::vector<Eigen::Vector4d> eigen_test::homog(
+    const std::vector<Eigen::Vector3d>& P)
 {
    std::vector<Eigen::Vector4d> v;
    std::vector<Eigen::Vector3d>::const_iterator i;
@@ -106,7 +107,7 @@ std::vector<Eigen::Vector4d> homog(const std::vector<Eigen::Vector3d>& P)
 }
 
 // derivative of the pi function
-Eigen::Matrix<double, 2, 3> dProj(const Eigen::Vector3d& P)
+Eigen::Matrix<double, 2, 3> eigen_test::dProj(const Eigen::Vector3d& P)
 {
    Eigen::Matrix<double, 2, 3> dProj = Eigen::Matrix<double, 2, 3>::Zero();
 
@@ -120,9 +121,9 @@ Eigen::Matrix<double, 2, 3> dProj(const Eigen::Vector3d& P)
    return dProj;
 }
 
-Eigen::MatrixXd computeJ(std::vector<Eigen::Vector3d> P,
-                         Eigen::Matrix<double, 3, 4> K,
-                         Eigen::Matrix<double, 4, 4> T)
+Eigen::MatrixXd eigen_test::computeCameraBlockJ(std::vector<Eigen::Vector3d> P,
+                                     Eigen::Matrix<double, 3, 4> K,
+                                     Eigen::Matrix<double, 4, 4> T)
 {
    Eigen::MatrixXd J(2 * P.size(), 6);
    std::vector<Eigen::Vector3d>::const_iterator i;
@@ -158,6 +159,31 @@ Eigen::MatrixXd computeJ(std::vector<Eigen::Vector3d> P,
    return J;
 }
 
+Eigen::MatrixXd eigen_test::computeJ(std::vector<Eigen::Vector3d> P,
+                                     Eigen::Matrix<double, 3, 4> K,
+                                     std::vector<Eigen::Matrix<double, 4, 4> > Tlist)
+{
+   size_t rowIdx = 0;
+   size_t colIdx = 0;
+   std::vector<Eigen::Matrix<double, 4, 4> >::const_iterator i;
+   Eigen::MatrixXd J(2 * P.size() * Tlist.size(), Tlist.size() * 6);
+   J = Eigen::MatrixXd::Zero(2 * P.size() * Tlist.size(), Tlist.size() * 6);
+
+   // std::cout << "J:" << std::endl << J << std::endl;
+
+   for (i = Tlist.begin(); i != Tlist.end(); ++i) {
+      Eigen::Matrix<double, 4, 4> T = *i;
+      Eigen::MatrixXd Jblock = computeCameraBlockJ(P, K, T);
+
+      // this blocking computation assumes that
+      J.block(rowIdx, colIdx, Jblock.rows(), Jblock.cols()) = Jblock;
+
+      rowIdx += Jblock.rows();
+      colIdx += Jblock.cols();
+   }
+   return J;
+}
+
 int main(int argc, char **argv)
 {
    // PRNG for noise
@@ -165,8 +191,10 @@ int main(int argc, char **argv)
    std::uniform_real_distribution<double> radDist(0.0, 1.0);
    std::uniform_real_distribution<double> dist(0.0, 1.0);
 
+   eigen_test BA;
+
    // create my static generator matrices
-   setup();
+   BA.setup();
 
    // create my points
    Eigen::Vector3d p1;
@@ -205,39 +233,63 @@ int main(int argc, char **argv)
    K(1,1) = 1.;
    K(2,2) = 1.;
 
-   Eigen::Matrix<double, 4, 4> T = Eigen::Matrix<double, 4, 4>::Identity();
+   Eigen::Matrix<double, 4, 4> T1 = Eigen::Matrix<double, 4, 4>::Identity();
+   Eigen::Matrix<double, 4, 4> T2 = Eigen::Matrix<double, 4, 4>::Identity();
 
    // T Matrix.  This is what we are going to use to project all our points
    // Then we'll "forget" this matrix and hopefully the optimization process
    // can reconstruct it.
-   T = toT(toR(M_PI / 2., 0, 0), Eigen::Vector3d(15, 0, 0));
-   T(0,0) = 0.;
-   T(1,1) = 0.;
-   std::cout << "T:" << std::endl << T << std::endl;
-   Eigen::VectorXd v2 = project(v, T, K);
+   T1 = BA.toT(BA.toR(M_PI / 2., 0, 0), Eigen::Vector3d(15, 0, 0));
+   T1(0,0) = 0.;
+   T1(1,1) = 0.;
+   std::cout << "T1:" << std::endl << T1 << std::endl;
+   Eigen::VectorXd v1 = BA.project(v, T1, K);
 
-   Eigen::VectorXd obs(v2.size());
-   for (size_t i = 0; i < obs.size(); ++i) {
-      obs(i) = v2(i) + dist(generator);
-   }
+   T2 = BA.toT(BA.toR(M_PI / 2., 0, 0), Eigen::Vector3d(30, 0, 0));
+   T2(0,0) = 0.;
+   T2(1,1) = 0.;
+   std::cout << "T2:" << std::endl << T2 << std::endl;
+   Eigen::VectorXd v2 = BA.project(v, T2, K);
+
+   Eigen::VectorXd v3(v1.rows() + v2.rows());
+   v3 << v1, v2;
+
+   Eigen::VectorXd obs(v3.size());
+   // for (size_t i = 0; i < obs.size(); ++i) {
+   //    obs(i) = v2(i) + dist(generator);
+   // }
 
    // let's use the points projected using the "real" T as our observations
-   obs = v2;
+   obs = v3;
 
    // let's create an initial guess for T.  it'll be very similar to T,
    // except we'll add some noise the angle we used to create the "real"
    // T
    double noisyAngle = (M_PI / 4.) + radDist(generator);
-   Sophus::SE3d se3Guess(toR(noisyAngle, 0, 0), Eigen::Vector3d(10, 10, 1));
-   std::cout << "Guess:" << std::endl << se3Guess.matrix() << std::endl;
+
+   Sophus::SE3d se3Guess1(BA.toR(noisyAngle, 0, 0),
+                          Eigen::Vector3d(10, 10, 1));
+
+   std::cout << "Guess1:" << std::endl << se3Guess1.matrix() << std::endl;
+
+   noisyAngle = (M_PI / 4.) + radDist(generator);
+
+   Sophus::SE3d se3Guess2(BA.toR(noisyAngle, 0, 0),
+                          Eigen::Vector3d(50, 10, 1));
+
+   std::cout << "Guess2:" << std::endl << se3Guess2.matrix() << std::endl
+             << std::endl;
 
    for (size_t j = 0; j < 80; j++) {
 
       // project our points using the T guess
-      Eigen::VectorXd pred = project(v, se3Guess.matrix(), K);
+      Eigen::VectorXd pred1 = BA.project(v, se3Guess1.matrix(), K);
+      Eigen::VectorXd pred2 = BA.project(v, se3Guess2.matrix(), K);
+      Eigen::VectorXd pred3(pred1.rows() + pred2.rows());
+      pred3 << pred1, pred2;
 
       // compute the residual
-      Eigen::VectorXd residualV = obs - pred;
+      Eigen::VectorXd residualV = obs - pred3;
       // std::cout << "************ Residual **************" << std::endl;
       // std::cout << residualV << std::endl;
       std::cout << "norm: " << residualV.operatorNorm() << std::endl
@@ -250,18 +302,25 @@ int main(int argc, char **argv)
 
       Eigen::VectorXd RHS = residualV;
 
+      std::vector<Eigen::Matrix<double, 4, 4> > Tlist;
+      Tlist.push_back(se3Guess1.matrix());
+      Tlist.push_back(se3Guess2.matrix());
+
       // compute the Jacobian matrix - and setup the linear system
-      Eigen::MatrixXd J = computeJ(v, K, se3Guess.matrix());
+      Eigen::MatrixXd J = BA.computeJ(v, K, Tlist);
+      // std::cout << std::endl << "J:" << std::endl << J << std::endl;
+      // std::cout << std::endl << "RHS:" << std::endl << RHS << std::endl;
       RHS = J.transpose() * RHS;
 
-      Eigen::Matrix<double, 6, 6> M = J.transpose() * J;
+      Eigen::Matrix<double, 12, 12> M = J.transpose() * J;
       Eigen::FullPivLU<Eigen::MatrixXd> LU(M);
-      Eigen::Matrix<double, 6, 1> X = -(LU.solve(RHS));
+      Eigen::Matrix<double, 12, 1> X = -(LU.solve(RHS));
 
       // this is something I'm not sure about.  We've solved the
       // system.  now we need to bring it back down from tangent space
       // and do our update.
-      se3Guess = se3Guess * Sophus::SE3Group<double>::exp(X);
+      se3Guess1 = se3Guess1 * Sophus::SE3Group<double>::exp(X.block(0, 0, 6, 1));
+      se3Guess2 = se3Guess2 * Sophus::SE3Group<double>::exp(X.block(6, 0, 6, 1));
 
       // not sure why this left-multiply doesn't work since we left-multiply
       // by the Generators when compuing J.
@@ -269,7 +328,9 @@ int main(int argc, char **argv)
 
    }
 
-   std::cout << std::endl << "Solution:" << std::endl << se3Guess.matrix()
+   std::cout << std::endl << "Solution:" << std::endl << se3Guess1.matrix()
+             << std::endl;
+   std::cout << std::endl << "Solution:" << std::endl << se3Guess2.matrix()
              << std::endl;
 
    return 0;
