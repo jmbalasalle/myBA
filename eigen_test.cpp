@@ -12,18 +12,6 @@ Eigen::Matrix4d G4;
 Eigen::Matrix4d G5;
 Eigen::Matrix4d G6;
 
-Eigen::Matrix3d hat(Eigen::Vector3d p)
-{
-   Eigen::Matrix3d m = Eigen::Matrix3d::Zero();
-   m(0,1) = -p(2);
-   m(0,2) = p(1);
-   m(1,0) = p(2);
-   m(1,2) = -p(0);
-   m(2,0) = -p(1);
-   m(2,1) = p(0);
-   return m;   
-}
-
 void setup()
 {
    G1 = Eigen::Matrix4d::Zero();
@@ -45,18 +33,6 @@ void setup()
 
    G6(0,1) = -1.;
    G6(1,0) = 1.;
-}
-
-std::vector<Eigen::Vector2d> residual(const std::vector<Eigen::Vector2d>& A,
-                                      const std::vector<Eigen::Vector2d>& B)
-{
-   std::vector<Eigen::Vector2d> v;
-   std::vector<Eigen::Vector2d>::const_iterator i;
-   std::vector<Eigen::Vector2d>::const_iterator j;
-   for (i = A.begin(), j = B.begin(); i != A.end(); ++i, ++j) {
-      v.push_back((*i) - (*j));
-   }
-   return v;
 }
 
 Eigen::Matrix3d toR(double phi, double chi, double psi)
@@ -142,18 +118,6 @@ Eigen::Matrix<double, 2, 3> dProj(const Eigen::Vector3d& P)
    dProj(1,2) = -P(1) / (P(2)*P(2));
 
    return dProj;
-}
-
-Eigen::Matrix<double, 2, 6> entry(Eigen::Vector3d p)
-{
-   Eigen::Matrix<double, 3, 6> rMat = Eigen::Matrix<double, 3, 6>::Zero();
-
-   rMat.block(0, 0, 3, 3) = Eigen::Matrix3d::Identity();
-   rMat.block(0, 3, 3, 3) = -hat(p);
-
-   Eigen::Matrix<double, 2, 6> entry = dProj(p) * rMat;
-
-   return entry;   
 }
 
 Eigen::MatrixXd computeJ(std::vector<Eigen::Vector3d> P,
@@ -305,7 +269,8 @@ int main(int argc, char **argv)
 
    }
 
-   std::cout << std::endl << "Solution:" << std::endl << se3Guess.matrix() << std::endl;
+   std::cout << std::endl << "Solution:" << std::endl << se3Guess.matrix()
+             << std::endl;
 
    return 0;
 }
