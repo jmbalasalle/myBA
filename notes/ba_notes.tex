@@ -1,0 +1,398 @@
+\documentclass{article}
+
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{fixltx2e}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{multirow}
+
+\bibliographystyle{plain}
+
+\title{Bundle Adjustment Notes}
+\author{James Balasalle}
+\date{\today}
+
+\DeclareMathOperator*{\argmin}{arg\,min}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+  These purpose of these notes is to capture what I learn while trying
+  to understand and implement the computer vision task known as
+  \emph{Bundle Adjustment}.  The intent is that I can use these notes
+  for reference, but also that they serve a didactic purpose: helping
+  others who are new to the field come up to speed on the subject
+  quickly.  It is my hope that I can explain, derive, or otherwise
+  show all of the mathematical steps required to implement a bundle
+  adjustment program.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+Bundle adjustment is a processes that uses mathematical optimization
+techniques to reduce the error found in cameras, their positions, and
+the images they create.  When a camera captures an image, all of the
+objects in its field of view are converted from their intrinsic 3D
+coordinates to a 2D image at the location of the camera.  The points
+themselves, in 3D, are called observations.  The process of bundle
+adjustment looks at the 3D points and where they end up in the 2D
+image and corrects for any errors introduced by the imaging process.
+I am not entirely sure, but I think error can be introduced by several
+factors: the camera lens, distortion introduced by the lens,
+imperfections in the lens, movement, and the ``non-discreteness'' of
+today's camera sensors.  What this means is that objects show up in
+slightly the wrong place in the 2D image.  Bundle adjustment is a
+method which minimizes these errors.  Bundle adjustment can reduce the
+error in the points themselves, as well as the location and pointing
+direction of the cameras.
+
+\section{A Simple Example}
+\label{sec:simple-example}
+In this section, I present a small, simple example.  Here we use a
+bundle adjustment process to reconstuct the location and pointing
+direction of a single camera.  The location and pointing direction of
+each camera are known as \textit{camera parameters}.  These include
+the 3D position of the camera, which is represented by 3 coordinates:
+$x$, $y$, and $z$, and where the camera is ``looking,'' which is
+typically represented by three angles: $\phi$, $\chi$, and $\psi$.  In
+this example we will only be adjusting the camera parameters, while
+assuming the 3D positions of the points and their corresponding 2D
+projects are exact and have no error.
+\\
+\\
+In this example, we have some 3D points, let's say $10$ points.  We
+also know the exact location of these points in some world coordinate
+system.  Next we place a camera somewhere, again in the world
+coordinate system, and point it in a direction that can see all
+points.  This means we fix the camera parameters: we therefore know
+$x$, $y$, $z$, $\phi$, $\chi$, and $\psi$.  Now that we know where the
+points are and we know the details of the camera we can ``take a
+picture'' of those points.  To do this we \emph{project} the 3D points
+into the 2D plane of the camera.  This process takes each 3D point, in
+world coordinates, and converts it to a pixel location in the image.
+Projecting a 3D point into a 2D camera is a two step process: 1)
+convert the 3D point from the world coordinate system to a 3D point in
+the camera's coordinate system and then 2) project the 3D point in the
+camera's coordinate system to a 2D plane.  We have already determined
+the camera parameters by fixing them to our favorite location and
+angles.  We encode the parameters in a 4x4 homogeneous matrix
+$\mathbf{T}$, which has the following form:
+\\
+\begin{equation}
+  \label{eq:T-matrix}
+  \mathbf{T} = \left[
+  \begin{array}{ccc|c}
+      \multicolumn{3}{c}{\multirow{3}{*}{\Large $\mathbf{R}$}} & t_x \\
+      & & & t_y \\
+      & & & t_z \\ \hline
+      0 & 0 & 0 & 1
+  \end{array}
+  \right]
+\end{equation}
+As you can see the upper-left 3x3 of the $\mathbf{T}$ matrix is simply
+the rotation matrix $\mathbf{R}$.  The rightmost column of
+$\mathbf{T}$ is the location of the camera with a $1$ in the bottom
+right position.  This is the matrix we use to convert the 3D points in
+world coordinates to the camera's coordinate system:
+\\
+\begin{equation}
+  \label{eq:pose-composition}
+  \mathbf{\Gamma}(\mathbf{x}) = \mathbf{P_{C}} = \mathbf{T^{-1}}\mathbf{P_{W}}
+\end{equation}
+where $\mathbf{P_{C}}$ denotes the resulting point in the camera's
+coorinate system and $\mathbf{P_{W}}$ is the point in the world
+cooridnate system.  Notice here that to convert from the world
+coordinate system to the camera coordinate system we actually need the
+\emph{inverse} of $\mathbf{T}$.  $\mathbf{T}$ is an orthogonal matrix,
+so we know the inverse exists.  I have not done this, but since we
+need the inverse, we could actually parameterize the camera using the
+inverse.  That is, instead of finding the $\mathbf{T}$ matrix, we
+could find $\mathbf{T^{-1}}$ during the solution process, and then
+simply invert $\mathbf{T}$ at the end to find our solution.
+\\
+\\
+Now that we have transformed $\mathbf{P_{W}}$ to $\mathbf{P_{W}}$ we
+project $\mathbf{P_{C}}$ into the plane of the camera.  In the
+computer vision literature I have read, the projection function is
+referred to as $\boldsymbol{\pi}$.  Actually I think
+$\boldsymbol{\pi}$ is used for the \emph{de-homogenization} process:
+when we go from homegeneous coordinates to non-homegenous coordinates.
+This holds true for $n$ to $n-1$ dimensions.  But in the 3D to 2D case
+there is also a geometric reasoning that has to do with similar
+triangles.  The projection or dehomogenization function is:
+\begin{equation}
+  \label{eq:dehomog}
+  \boldsymbol{\pi}(\mathbf{v}) =  \frac{1}{v_n} \left(
+  \begin{array}{c}
+    v_1 \\
+    v_2 \\
+    \vdots \\
+    v_{n-1}
+  \end{array}
+  \right)
+\end{equation}
+\\
+It's pretty instructive to show this function,
+$\boldsymbol{\pi}(\mathbf{v})$, in the 3D to 2D case.  Here,
+$\mathbf{P_C}$, is a vector with length 3, representing the $x, y, z$
+coordinates of the point. The result of this operation would be a
+vector of length two, the elements of which we will denote as $u$ and
+$v$.  Therefore the function $\boldsymbol{\pi}$ is actually a system
+of two equations: one for $u$ and one for $v$.
+\begin{align}
+  \label{eq:proj-3d-to-2d}
+    \pi_u(x,y,z) = \frac{x}{z} \\ \nonumber
+    \pi_v(x,y,z) = \frac{y}{z}
+\end{align}
+\\
+We have now shown how to take a point in world coordinates and convert
+it to pixel coordinates of the camera: $ \mathbf{\Gamma}(\mathbf{x}) =
+\mathbf{P_{C}} = \boldsymbol{\pi}(\mathbf{T^{-1}}\mathbf{P_{W}})$.
+\\
+\\
+So far, we have discussed a \emph{single} point.  But in our program,
+and in the real world bundle adjustment problem, we will have many
+points.  Each 3D point is a vector of length 3, and the projected
+points, in 2D, are also vectors, of length 2.  When we have multiple
+points, we can store all the $u$ and $v$ values in a single vector, as
+demonstrated here.  In this example we show the results of projecting
+3 points in a single vector.  The superscripts denote which points
+have been projected into each $u$ and $v$ value.
+\begin{equation}
+  \label{eq:single-vec}
+  \mathbf{X} = \left(
+  \begin{array}{c}
+    u^{(1)} \\
+    v^{(1)} \\
+    u^{(2)} \\
+    v^{(2)} \\
+    u^{(3)} \\
+    v^{(3)}
+  \end{array}
+  \right)
+\end{equation}
+
+\subsection{Introduction to Optimization}
+\label{sec:optimization-intro}
+Bundle Adjustment is a mathematical optimization process.  The 3D
+points, and by extension the 2D pixel coordinates are our
+observations.  We want to minimize the distance between the
+observations (where we actually saw the points) and where they
+``should'' be.  Mathematically this means we want to minimize the norm
+of the difference between the observations and the correct locations
+of the points.  We will be using a Newton-style method to solve the
+optimization problem, which means we need an initial guess, as all
+Netwon methods do.  The initial guess is our first estimate of the
+solution, and in this problem we are solving for the camera
+parameters, or $\mathbf{T}$ matrix.  So our intial guess is simply a
+guess for $\mathbf{T}$.  Using this guess, we then transform all the
+points and project them into the camera.  This gives us a guess for
+all $u$ and $v$ values.  We then subtract this guess from the true $u$
+and $v$ values.  It is the norm of this difference that we are trying
+to minimize.
+\\
+\\
+We can write this several ways, but we will look at one of the more
+common forms:
+\begin{equation}
+  \label{eq:argmin}
+  \mathbf{x^*} = \argmin_x \mathbf{F}(\mathbf{x})
+\end{equation}
+
+where
+\begin{equation}
+  \label{eq:argmin-F}
+  \mathbf{F}(\mathbf{x}) = \frac{1}{2} \sum\limits_{i=1}^n f_i(\mathbf{x})^2 = \| \mathbf{f}(\mathbf{x}) \|
+\end{equation}
+
+What is $f_i(\mathbf{x})$?  It is the difference between the
+observation of point $i$ and guess for point $i$.  So, it is actually
+two functions, one for $u$ and one for $v$.  Using the same notation
+as above, for 3 points here is the full definition of
+$\mathbf{F}(\mathbf{x})$:
+\begin{eqnarray}
+  \label{eq:full-F}
+  \mathbf{F}(\mathbf{x}) &=& \frac{1}{2} [ (u_O^{(1)} - u_P^{(1)})^2 + (v_O^{(1)} - v_P^{(1)})^2 + (u_O^{(2)} - u_P^{(2)})^2 + \\
+    && (v_O^{(2)} - v_P^{(2)})^2 + (u_O^{(3)} - u_P^{(3)})^2 + (v_O^{(3)} - v_P^{(3)})^2 ] \nonumber
+\end{eqnarray}
+where $u_O^{(1)}$ is the $u$ pixel location of observation number 1
+and $v_P^{(3)}$ is the $v$ pixel location of the third point when
+projected with the current guess for $\mathbf{T}$.
+\\
+\\
+How do we solve equation~\ref{eq:argmin}?  This is a rather
+complicated process, that is beyond the scope of these notes.  I will
+give a brief explanation, however.  We will only consider finding a
+minimum, it might not be the global minimum; finding the global
+minimum is out of the scope of this discussion.  A minimum of
+$\mathbf{F(\mathbf{x})}$ exists where the derivative of
+$\mathbf{F(\mathbf{x})} = 0$.  To find where an equation equals zero,
+we use Newton's method.  Here is a review of Newton's method for a
+single variable:
+
+\begin{equation}
+  \label{eq:newton-1d}
+  x_{k+1} = x_k - \frac{f(x)}{f^{-1}(x)}
+\end{equation}
+
+Of course, bundle adjustment is a more complicated problem.  Since we
+have many more observations than unknowns, we have an over-determined
+system, there is no exact solution.  Instead we are trying to find the
+solution that minimized the error, as stated in the formulation of the
+minimization problem.  The way we will do this is to solve
+the following problem:
+\begin{equation}
+  \label{eq:JtJ}
+  \mathbf{J}^T\mathbf{J}\cdot\mathbf{h} = \mathbf{J}^T\mathbf{R}
+\end{equation}
+where $\mathbf{R}$ is the difference between observations and the
+current guess, as discussed above.  Equation~\ref{eq:JtJ} is known as
+the \emph{normal equation}.  After we have a solution, $\mathbf{h}$,
+we use this as our Netwon update.  And then we solve the problem
+again with the updated guess, and we do this until the norm of our
+error, $\mathbf{R}$, is no longer decreasing.
+\\
+\\
+How do we take the derivative and compute $\mathbf{J}$?  We compute a
+Jacobian matrix where each entry is the partial derivative of one of
+the equations with respect to one of the unknowns.  In our case, the
+Jacobian for each point is a 2x6 matrix.  The function we are taking
+the derivative of is
+\begin{equation}
+  \label{eq:deriv}
+  \mathbf{R} = \mathbf{z} - \boldsymbol{\pi}(\mathbf{T^{-1}}\mathbf{P_{W}})
+\end{equation}
+where $\mathbf{z}$ is one observation (which is a 2-vector of $u$ and
+$v$).  This is how we take the derivative of this: $\mathbf{z}$ is a
+constant, so the derivative is zero; for the remaining part we need to
+use the chain rule:
+
+\begin{equation}
+  \label{eq:chain-rule}
+  \frac{\partial\boldsymbol{\pi}(\mathbf{x})}{\partial\mathbf{x}} \frac{\partial\mathbf{\Gamma}(\mathbf{y})}{\partial\mathbf{y}}
+\end{equation}
+where $\mathbf{\Gamma}(\mathbf{y})$ is a function that represents
+transforming a point by a matrix as shown in
+equationπ~\ref{eq:pose-composition}.  The chain rule simply says we
+take the derivative of the outer function, $\boldsymbol{\pi}$, and
+multiply by the derivative of the inner function, $\mathbf{\Gamma}$.
+
+Equation~\ref{eq:proj-3d-to-2d}, $\boldsymbol{\pi}(\mathbf{x})$, is
+instructive for computing the Jacobian.  As stated above, there at two
+equations (one for $u$ and one for $v$), and three unknowns: $x$, $y$,
+and $z$.  Taking the derivatives analytically gives us the following
+Jacobian:
+\begin{equation}
+  \label{eq:proj-jacobian}
+  \mathbf{J} =
+  \begin{bmatrix}
+    \frac{1}{z} & 0 & \frac{-x}{z^2} \\
+    0 & \frac{1}{z} & \frac{-y}{z^2}
+  \end{bmatrix}
+\end{equation}
+Next we need to take the derivative of $\mathbf{\Gamma}(\mathbf{y})$.  This
+is much more complicated, and I will not explain it fully.
+Essentially, we use Lie groups, and multiply each unknown by a
+specific 4x4 matrix.  Then once we have solved the linear system, we
+convert the solution from ``Lie algebra space'' back to our Euclidean
+space.  The end result is that the derivative of $\mathbf{T}$ is a 4x4
+matrix.
+\\
+\\
+I have also left out something called the \emph{intrinsic matrix} of
+the camera.  This is a 3x4 matrix which represents internal
+calibration parameters of the camera, such as focal length and optical
+distortion.  For this problem, I have simply used a 3x4 identity
+matrix.  I mention it here because it is important for the matrix
+multiplication.  So far our chain rule step looks like this (in terms
+of matrix sizes):
+\begin{equation}
+  \label{eq:T-matrix}
+  \mathbf{J} =
+  \left[
+  \begin{array}{c}
+      2 \textrm{x} 3
+  \end{array}
+  \cdot
+  \begin{array}{c}
+      3 \textrm{x} 4
+  \end{array}
+  \cdot
+  \begin{array}{c}
+      4 \textrm{x} 4
+  \end{array}
+  \cdot
+  \begin{array}{c}
+      4 \textrm{x} 1
+  \end{array}
+  \right]
+\end{equation}
+which clearly shows that the matrix multiplication is defined because
+all the sizes are legal, and the end result is a 2x1 matrix, which is
+actually what we expect: a value for $u$ and a value for $v$.  The
+point we are transforming is 4x1 because it is represented in
+homogeneous coordinates. As just stated, this multiplication results
+in two values, and from this we can see that for every point, we will
+have two rows.  Now we need to compute all the columns.  In our
+problem we have 6 unknowns, we have to do this 6 times.  We do this by
+changing the 4x4 matrix in the Lie algebra step.  These 4x4 matrices
+are well-known and can be easily found in the literature; see Hauke's
+thesis \cite{strasdat2012local} for a much better and more detailed
+explanation.  So our Jacobian for a single point results in a 2x6
+matrix.
+\\
+\\
+Obviously for more points, we will have a ``taller'' matrix.  This is
+to be expected, because bundle adjustment is a least squares problem:
+we are minimizing the error, not finding an exact solution.  We do
+this for each point, adding two rows.  When we have done this for all
+our observations, we finally computed $\mathbf{J}$ and now we can
+solve the linear system defined in~\ref{eq:JtJ}.
+\\
+\\
+As stated above, our toy problem has 10 points, which results in a
+very tractable size.  We are able to easily compute
+$\mathbf{J}^T\cdot\mathbf{J}$ and $\mathbf{J}^T\cdot\mathbf{R}$,
+followed by solving the resulting system exactly using LU
+factorization.  Once we have done this, we have a solution,
+$\mathbf{h}$.  Since we used the Lie algebra method, we need to
+convert this solution back to euclidean space.  This is done via a C++
+package called \emph{Sophus} and is a very easy and simple operation.
+We now have our Newton update to $\mathbf{T}$.  Instead of adding this
+result to our previous guess, we right-multiply by the update.  Now we
+have our new guess in euclidean space.  From here, we repeat the
+process: project all the points with our new guess, compute the error
+vector, $\mathbf{R}$, form the Jacobian and sovle the system for our
+next update.  We stop the process when the norm of $\mathbf{R}$ falls
+below some threshold.
+\\
+\\
+Here is the process of our toy problem:
+\begin{enumerate}
+\item Create 10 3D points, store them in a vector $\mathbf{P}$.
+\item Construct a reasonable camera and corresponding $\mathbf{T}$
+  matrix
+\item Project each point into the camera, store the results in a vector
+  $\mathbf{O}$.
+\item \emph{Forget} $\mathbf{T}$
+\item Create a ``reasonable'' guess for $\mathbf{T}$, call this $\mathbf{T_{Guess}}$
+\item Project each point using $\mathbf{T_{Guess}}$
+\item Compute the $\mathbf{J}$ matrix
+\item Compute the $\mathbf{R}$ vector
+\item Sovle the follwing system: $\mathbf{J}^T\mathbf{J}\cdot\mathbf{h} =
+  \mathbf{J}^T\mathbf{R}$
+\item Convert back to eucliding coordinates
+\item Update the guess: $\mathbf{T_{Guess + 1}} = \mathbf{T_{Guess}}
+  \cdot \mathbf{X}$
+\item Compute $\|\mathbf{T_{Guess + 1}}\|$ and stop once it has
+  reached some threshold
+\end{enumerate}
+
+
+\bibliography{ba_notes}
+
+\end{document}
