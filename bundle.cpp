@@ -142,14 +142,12 @@ Eigen::MatrixXd eigen_test::computePointBlockJ(std::vector<Eigen::Vector3d> P,
       Eigen::Matrix4d Tinv = T.inverse();
       Eigen::Vector4d q = T.inverse() * homog(p);
       Eigen::Matrix3d R = Tinv.block(0, 0, 3, 3);
-      // Eigen::Matrix<double, 2, 3> block = -dProj(R * p) * R;
       Eigen::Matrix<double, 2, 3> block = -dProj(q.block(0,0,3,1)) * R;
 
       J.block(idx * 2, idx * 3, 2, 3) = block;
       idx++;
    }
 
-   // std::cout << "block:" << std::endl << J << std::endl;
    return J;
 }
 
@@ -206,7 +204,6 @@ Eigen::MatrixXd eigen_test::computeJ(std::vector<Eigen::Vector3d> P,
       J.block(rowIdx, 0, Jblock.rows(), Jblock.cols()) = Jblock;
       rowIdx += Jblock.rows();
    }
-   std::cout << "J:" << std::endl << J << std::endl << std::endl;
    return J;
 }
 
@@ -253,13 +250,11 @@ int main(int argc, char **argv)
    // v.push_back(p6);
    // v.push_back(p7);
 
-   std::cout << "initial guess:" << std::endl;
    std::vector<Eigen::Vector3d> vGuess;
    for (size_t i = 0; i < v.size(); ++i) {
-      vGuess.push_back(Eigen::Vector3d(v[i](0) + .1,
-                                       v[i](1) + .1,
-                                       v[i](2) + .1));
-      std::cout << std::endl << vGuess[i] << std::endl;
+      vGuess.push_back(Eigen::Vector3d(v[i](0) + 1.1,
+                                       v[i](1) + 1.1,
+                                       v[i](2) + 1.1));
    }
 
    // K matrix is 3x4 and is currently set to "identity"
@@ -304,7 +299,7 @@ int main(int argc, char **argv)
    // let's use the points projected using the "real" T as our observations
    obs = v4;
 
-   for (size_t j = 0; j < 4; j++) {
+   for (size_t j = 0; j < 80; j++) {
 
       // project our points using the 3D guess for the points
       Eigen::VectorXd pred1 = BA.project(vGuess, T1, K);
@@ -321,7 +316,8 @@ int main(int argc, char **argv)
                 << std::endl;
 
       if (residualV.operatorNorm() < 1e-12) {
-         std::cout << "tolerance reached" << std::endl;
+         std::cout << "tolerance reached in " << j+1 << " iterations"
+                   << std::endl;
          break;
       }
 
@@ -329,22 +325,20 @@ int main(int argc, char **argv)
 
       // compute the Jacobian matrix - and setup the linear system
       Eigen::MatrixXd J = BA.computeJ(vGuess, K, Tlist);
-      // std::cout << std::endl << "J:" << std::endl << J << std::endl;
-      // std::cout << std::endl << "RHS:" << std::endl << RHS << std::endl;
       RHS = J.transpose() * RHS;
 
       Eigen::Matrix<double, 9, 9> M = J.transpose() * J;
       Eigen::FullPivLU<Eigen::MatrixXd> LU(M);
       Eigen::Matrix<double, 9, 1> X = -(LU.solve(RHS));
 
-      std::cout << "soln:" << std::endl << X << std::endl << std::endl;
-
-      std::cout << "vguess: " << std::endl;
       for (size_t i = 0; i < vGuess.size(); ++i) {
          Eigen::Vector3d p = X.block(i * 3, 0, 3, 1);
          vGuess[i] += p;
-         std::cout << vGuess[i] << std::endl;
       }
+   }
+
+   for (size_t i = 0; i < vGuess.size(); ++i) {
+      std::cout << vGuess[i] << std::endl << std::endl;
    }
 
    return 0;
