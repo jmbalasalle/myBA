@@ -39,6 +39,10 @@ class eigen_test
    Eigen::MatrixXd computeCameraBlockJ(std::vector<Eigen::Vector3d> P,
                                        Eigen::Matrix<double, 3, 4> K,
                                        Eigen::Matrix<double, 4, 4> T);
+
+   Eigen::MatrixXd computePointBlockJ(std::vector<Eigen::Vector3d> P,
+                                      Eigen::Matrix<double, 3, 4> K,
+                                      Eigen::Matrix<double, 4, 4> T);
 };
 
 #endif
