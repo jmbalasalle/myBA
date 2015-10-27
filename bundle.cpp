@@ -194,16 +194,26 @@ Eigen::MatrixXd eigen_test::computeJ(std::vector<Eigen::Vector3d> P,
                                      std::vector<Eigen::Matrix<double, 4, 4> > Tlist)
 {
    size_t rowIdx = 0;
+   size_t colIdx = 0;
    std::vector<Eigen::Matrix<double, 4, 4> >::const_iterator i;
-   Eigen::MatrixXd J(2 * P.size() * Tlist.size(), P.size() * 3);
-   J = Eigen::MatrixXd::Zero(2 * P.size() * Tlist.size(), P.size() * 3);
+
+   Eigen::MatrixXd J(2 * P.size() * Tlist.size(),
+                     Tlist.size() * 6 + P.size() * 3);
+
+   J = Eigen::MatrixXd::Zero(2 * P.size() * Tlist.size(),
+                             Tlist.size() * 6 + P.size() * 3);
 
    for (i = Tlist.begin(); i != Tlist.end(); ++i) {
       Eigen::Matrix<double, 4, 4> T = *i;
-      Eigen::MatrixXd Jblock = computePointBlockJ(P, K, T);
-      J.block(rowIdx, 0, Jblock.rows(), Jblock.cols()) = Jblock;
+      Eigen::MatrixXd Jblock = computeCameraBlockJ(P, K, T);
+      J.block(rowIdx, colIdx, Jblock.rows(), Jblock.cols()) = Jblock;
+      colIdx += Jblock.cols();
+
+      Jblock = computePointBlockJ(P, K, T);
+      J.block(rowIdx, Tlist.size() * 6, Jblock.rows(), Jblock.cols()) = Jblock;
       rowIdx += Jblock.rows();
    }
+
    return J;
 }
 
@@ -229,32 +239,44 @@ int main(int argc, char **argv)
    Eigen::Vector3d p3;
    p3 << 1, 8, 5;
 
-   // Eigen::Vector3d p4;
-   // p4 << 10, 10, 10;
+   Eigen::Vector3d p4;
+   p4 << 10, 10, 10;
 
-   // Eigen::Vector3d p5;
-   // p5 << 6, 8, 4;
+   Eigen::Vector3d p5;
+   p5 << 6, 8, 4;
 
-   // Eigen::Vector3d p6;
-   // p6 << 5, 1, 2;
+   Eigen::Vector3d p6;
+   p6 << 5, 1, 2;
 
-   // Eigen::Vector3d p7;
-   // p7 << 8, 4, 7;
+   Eigen::Vector3d p7;
+   p7 << 8, 4, 7;
+
+   Eigen::Vector3d p8;
+   p8 << 4, 2, 5;
+
+   Eigen::Vector3d p9;
+   p9 << 3, 9, 3;
+
+   Eigen::Vector3d p10;
+   p10 << 9, 6, 4;
 
    std::vector<Eigen::Vector3d> v;
    v.push_back(p1);
    v.push_back(p2);
    v.push_back(p3);
-   // v.push_back(p4);
-   // v.push_back(p5);
-   // v.push_back(p6);
-   // v.push_back(p7);
+   v.push_back(p4);
+   v.push_back(p5);
+   v.push_back(p6);
+   v.push_back(p7);
+   v.push_back(p8);
+   v.push_back(p9);
+   v.push_back(p10);
 
    std::vector<Eigen::Vector3d> vGuess;
    for (size_t i = 0; i < v.size(); ++i) {
-      vGuess.push_back(Eigen::Vector3d(v[i](0) + 1.1,
-                                       v[i](1) + 1.1,
-                                       v[i](2) + 1.1));
+      vGuess.push_back(Eigen::Vector3d(v[i](0) + 0.05,
+                                       v[i](1) + 0.05,
+                                       v[i](2) + 0.05));
    }
 
    // K matrix is 3x4 and is currently set to "identity"
@@ -289,33 +311,50 @@ int main(int argc, char **argv)
    Eigen::VectorXd v4(v1.rows() + v2.rows() + v3.rows());
    v4 << v1, v2, v3;
 
-   std::vector<Eigen::Matrix<double, 4, 4> > Tlist;
-   Tlist.push_back(T1);
-   Tlist.push_back(T2);
-   Tlist.push_back(T3);
-
    Eigen::VectorXd obs(v4.size());
-
-   // let's use the points projected using the "real" T as our observations
    obs = v4;
 
-   for (size_t j = 0; j < 80; j++) {
+   // double noisyAngle = (M_PI / 2.) + radDist(generator);
+   double noisyAngle = (M_PI / 2.);
+   Sophus::SE3d se3Guess1(BA.toR(noisyAngle, 0, 0),
+                          Eigen::Vector3d(15, 0, 0));
+
+   // noisyAngle = (M_PI * .4) + radDist(generator);
+   noisyAngle = (M_PI * .4);
+   Sophus::SE3d se3Guess2(BA.toR(noisyAngle, 0, 0),
+                          Eigen::Vector3d(30, 0, 0));
+
+   // noisyAngle = (M_PI * .3) + radDist(generator);
+   noisyAngle = (M_PI * .3);
+   Sophus::SE3d se3Guess3(BA.toR(noisyAngle, 0, 0),
+                          Eigen::Vector3d(45, 0, 0));
+
+   std::vector<Eigen::Matrix<double, 4, 4> > Tlist;
+   Tlist.push_back(se3Guess1.matrix());
+   Tlist.push_back(se3Guess2.matrix());
+   Tlist.push_back(se3Guess3.matrix());
+
+   for (size_t j = 0; j < 800; j++) {
 
       // project our points using the 3D guess for the points
-      Eigen::VectorXd pred1 = BA.project(vGuess, T1, K);
-      Eigen::VectorXd pred2 = BA.project(vGuess, T2, K);
-      Eigen::VectorXd pred3 = BA.project(vGuess, T3, K);
+      Eigen::VectorXd pred1 = BA.project(vGuess, se3Guess1.matrix(), K);
+      Eigen::VectorXd pred2 = BA.project(vGuess, se3Guess2.matrix(), K);
+      Eigen::VectorXd pred3 = BA.project(vGuess, se3Guess3.matrix(), K);
       Eigen::VectorXd pred4(pred1.rows() + pred2.rows() + pred3.rows());
       pred4 << pred1, pred2, pred3;
 
       // compute the residual
       Eigen::VectorXd residualV = obs - pred4;
+      // std::cout << "************ Obs **************" << std::endl;
+      // std::cout << obs << std::endl;
+      // std::cout << "************ Pred **************" << std::endl;
+      // std::cout <<  pred4 << std::endl;
       // std::cout << "************ Residual **************" << std::endl;
       // std::cout << residualV << std::endl;
       std::cout << "norm: " << residualV.operatorNorm() << std::endl
                 << std::endl;
 
-      if (residualV.operatorNorm() < 1e-12) {
+      if (residualV.operatorNorm() < 1e-14) {
          std::cout << "tolerance reached in " << j+1 << " iterations"
                    << std::endl;
          break;
@@ -327,18 +366,31 @@ int main(int argc, char **argv)
       Eigen::MatrixXd J = BA.computeJ(vGuess, K, Tlist);
       RHS = J.transpose() * RHS;
 
-      Eigen::Matrix<double, 9, 9> M = J.transpose() * J;
+      Eigen::MatrixXd M = J.transpose() * J;
       Eigen::FullPivLU<Eigen::MatrixXd> LU(M);
-      Eigen::Matrix<double, 9, 1> X = -(LU.solve(RHS));
+      Eigen::VectorXd X = -(LU.solve(RHS));
 
+      se3Guess1 = se3Guess1 * Sophus::SE3Group<double>::exp(X.block(0, 0, 6, 1));
+      se3Guess2 = se3Guess2 * Sophus::SE3Group<double>::exp(X.block(6, 0, 6, 1));
+      se3Guess3 = se3Guess3 * Sophus::SE3Group<double>::exp(X.block(12, 0, 6, 1));
+
+      // std::cout << "T1Guess:" << std::endl << se3Guess1.matrix() << std::endl;
+      // std::cout << "T2Guess:" << std::endl << se3Guess2.matrix() << std::endl;
+      // std::cout << "T3Guess:" << std::endl << se3Guess3.matrix() << std::endl;
+      size_t offset = Tlist.size() * 6;
       for (size_t i = 0; i < vGuess.size(); ++i) {
-         Eigen::Vector3d p = X.block(i * 3, 0, 3, 1);
+         Eigen::Vector3d p = X.block(offset + (i * 3), 0, 3, 1);
          vGuess[i] += p;
+         // std::cout << i << ":" << std::endl << vGuess[i] << std::endl;
       }
    }
 
+      std::cout << "T1Guess:" << std::endl << se3Guess1.matrix() << std::endl;
+      std::cout << "T2Guess:" << std::endl << se3Guess2.matrix() << std::endl;
+      std::cout << "T3Guess:" << std::endl << se3Guess3.matrix() << std::endl;
    for (size_t i = 0; i < vGuess.size(); ++i) {
       std::cout << vGuess[i] << std::endl << std::endl;
+      std::cout << BA.project(K * (se3Guess1.matrix().inverse() * BA.homog(vGuess[i]))) << std::endl << std::endl;
    }
 
    return 0;
