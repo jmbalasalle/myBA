@@ -140,7 +140,7 @@ Eigen::MatrixXd eigen_test::computePointBlockJ(std::vector<Eigen::Vector3d> P,
       Eigen::Vector3d p = *i;
 
       Eigen::Matrix4d Tinv = T.inverse();
-      Eigen::Vector4d q = T.inverse() * homog(p);
+      Eigen::Vector4d q = Tinv * homog(p);
       Eigen::Matrix3d R = Tinv.block(0, 0, 3, 3);
       Eigen::Matrix<double, 2, 3> block = -dProj(q.block(0,0,3,1)) * R;
 
