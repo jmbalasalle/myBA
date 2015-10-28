@@ -274,9 +274,9 @@ int main(int argc, char **argv)
 
    std::vector<Eigen::Vector3d> vGuess;
    for (size_t i = 0; i < v.size(); ++i) {
-      vGuess.push_back(Eigen::Vector3d(v[i](0) + 0.05,
-                                       v[i](1) + 0.05,
-                                       v[i](2) + 0.05));
+      vGuess.push_back(Eigen::Vector3d(v[i](0) + 0.01,
+                                       v[i](1) + 0.01,
+                                       v[i](2) + 0.01));
    }
 
    // K matrix is 3x4 and is currently set to "identity"
@@ -290,19 +290,19 @@ int main(int argc, char **argv)
    Eigen::Matrix<double, 4, 4> T3 = Eigen::Matrix<double, 4, 4>::Identity();
 
    // T Matrix.
-   T1 = BA.toT(BA.toR(M_PI / 2., 0, 0), Eigen::Vector3d(15, 0, 0));
+   T1 = BA.toT(BA.toR(M_PI / 2., 0, 0), Eigen::Vector3d(15, 0, 11));
    T1(0,0) = 0.;
    T1(1,1) = 0.;
    std::cout << "T1:" << std::endl << T1 << std::endl;
    Eigen::VectorXd v1 = BA.project(v, T1, K);
 
-   T2 = BA.toT(BA.toR(M_PI * .4, 0, 0), Eigen::Vector3d(30, 0, 0));
+   T2 = BA.toT(BA.toR(M_PI * .4, 0, 0), Eigen::Vector3d(30, 12, 19));
    // T2(0,0) = 0.;
    // T2(1,1) = 0.;
    std::cout << "T2:" << std::endl << T2 << std::endl;
    Eigen::VectorXd v2 = BA.project(v, T2, K);
 
-   T3 = BA.toT(BA.toR(M_PI * .3, 0, 0), Eigen::Vector3d(45, 0, 0));
+   T3 = BA.toT(BA.toR(M_PI * .3, 0, 0), Eigen::Vector3d(45, 14, 17));
    // T3(0,0) = 0.;
    // T3(1,1) = 0.;
    std::cout << "T3:" << std::endl << T3 << std::endl;
@@ -313,28 +313,23 @@ int main(int argc, char **argv)
 
    Eigen::VectorXd obs(v4.size());
    obs = v4;
+   std::cout << "Obs:" << std::endl << obs << std::endl;
 
-   // double noisyAngle = (M_PI / 2.) + radDist(generator);
-   double noisyAngle = (M_PI / 2.);
-   Sophus::SE3d se3Guess1(BA.toR(noisyAngle, 0, 0),
-                          Eigen::Vector3d(15, 0, 0));
+   Sophus::SE3d se3Guess1(BA.toR((M_PI / 2.), 0, 0),
+                          Eigen::Vector3d(15, 0, 11));
 
-   // noisyAngle = (M_PI * .4) + radDist(generator);
-   noisyAngle = (M_PI * .4);
-   Sophus::SE3d se3Guess2(BA.toR(noisyAngle, 0, 0),
-                          Eigen::Vector3d(30, 0, 0));
+   Sophus::SE3d se3Guess2(BA.toR((M_PI * .4), 0, 0),
+                          Eigen::Vector3d(30, 12, 19));
 
-   // noisyAngle = (M_PI * .3) + radDist(generator);
-   noisyAngle = (M_PI * .3);
-   Sophus::SE3d se3Guess3(BA.toR(noisyAngle, 0, 0),
-                          Eigen::Vector3d(45, 0, 0));
+   Sophus::SE3d se3Guess3(BA.toR((M_PI * .3), 0, 0),
+                          Eigen::Vector3d(45, 14, 17));
 
    std::vector<Eigen::Matrix<double, 4, 4> > Tlist;
    Tlist.push_back(se3Guess1.matrix());
    Tlist.push_back(se3Guess2.matrix());
    Tlist.push_back(se3Guess3.matrix());
 
-   for (size_t j = 0; j < 800; j++) {
+   for (size_t j = 0; j < 1000; j++) {
 
       // project our points using the 3D guess for the points
       Eigen::VectorXd pred1 = BA.project(vGuess, se3Guess1.matrix(), K);
@@ -354,7 +349,7 @@ int main(int argc, char **argv)
       std::cout << "norm: " << residualV.operatorNorm() << std::endl
                 << std::endl;
 
-      if (residualV.operatorNorm() < 1e-14) {
+      if (fabs(residualV.operatorNorm()) < 1e-12) {
          std::cout << "tolerance reached in " << j+1 << " iterations"
                    << std::endl;
          break;
@@ -370,13 +365,20 @@ int main(int argc, char **argv)
       Eigen::FullPivLU<Eigen::MatrixXd> LU(M);
       Eigen::VectorXd X = -(LU.solve(RHS));
 
-      se3Guess1 = se3Guess1 * Sophus::SE3Group<double>::exp(X.block(0, 0, 6, 1));
-      se3Guess2 = se3Guess2 * Sophus::SE3Group<double>::exp(X.block(6, 0, 6, 1));
-      se3Guess3 = se3Guess3 * Sophus::SE3Group<double>::exp(X.block(12, 0, 6, 1));
+      Eigen::JacobiSVD<Eigen::MatrixXd> svd(M);
 
-      // std::cout << "T1Guess:" << std::endl << se3Guess1.matrix() << std::endl;
-      // std::cout << "T2Guess:" << std::endl << se3Guess2.matrix() << std::endl;
-      // std::cout << "T3Guess:" << std::endl << se3Guess3.matrix() << std::endl;
+      double cond = svd.singularValues()(0) /
+         svd.singularValues()(svd.singularValues().size()-1);
+
+      std::cout << "Cond#: " << cond << std::endl;
+
+      se3Guess1 = se3Guess1 *Sophus::SE3Group<double>::exp(X.block(0,0,6,1));
+      se3Guess2 = se3Guess2 *Sophus::SE3Group<double>::exp(X.block(6,0,6,1));
+      se3Guess3 = se3Guess3 *Sophus::SE3Group<double>::exp(X.block(12,0,6,1));
+      //std::cout << "T1Guess:" << std::endl << se3Guess1.matrix() << std::endl;
+      //std::cout << "T2Guess:" << std::endl << se3Guess2.matrix() << std::endl;
+      //std::cout << "T3Guess:" << std::endl << se3Guess3.matrix() << std::endl;
+
       size_t offset = Tlist.size() * 6;
       for (size_t i = 0; i < vGuess.size(); ++i) {
          Eigen::Vector3d p = X.block(offset + (i * 3), 0, 3, 1);
@@ -385,12 +387,26 @@ int main(int argc, char **argv)
       }
    }
 
-      std::cout << "T1Guess:" << std::endl << se3Guess1.matrix() << std::endl;
-      std::cout << "T2Guess:" << std::endl << se3Guess2.matrix() << std::endl;
-      std::cout << "T3Guess:" << std::endl << se3Guess3.matrix() << std::endl;
+   std::cout << "T1Guess:" << std::endl << se3Guess1.matrix() << std::endl;
+   std::cout << "T2Guess:" << std::endl << se3Guess2.matrix() << std::endl;
+   std::cout << "T3Guess:" << std::endl << se3Guess3.matrix() << std::endl;
+
+   std::cout << "Reconstructed 3D points." << std::endl;
    for (size_t i = 0; i < vGuess.size(); ++i) {
       std::cout << vGuess[i] << std::endl << std::endl;
-      std::cout << BA.project(K * (se3Guess1.matrix().inverse() * BA.homog(vGuess[i]))) << std::endl << std::endl;
+   }
+
+   std::cout << "Reprojected 3D points - compare to Obs." << std::endl;
+   for (size_t i = 0; i < vGuess.size(); ++i) {
+      std::cout << BA.project(K * (se3Guess1.matrix().inverse() * BA.homog(vGuess[i]))) << std::endl;
+   }
+
+   for (size_t i = 0; i < vGuess.size(); ++i) {
+      std::cout << BA.project(K * (se3Guess2.matrix().inverse() * BA.homog(vGuess[i]))) << std::endl;
+   }
+
+   for (size_t i = 0; i < vGuess.size(); ++i) {
+      std::cout << BA.project(K * (se3Guess3.matrix().inverse() * BA.homog(vGuess[i]))) << std::endl;
    }
 
    return 0;
